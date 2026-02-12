@@ -1,0 +1,46 @@
+version: "3"
+
+tasks:
+  install:
+    desc: Install all dependencies (frontend + Rust)
+    cmds:
+      - pnpm install
+      - cd src-tauri && cargo fetch
+
+  dev:
+    desc: Start the full Tauri app in development mode
+    cmds:
+      - pnpm tauri dev
+
+  dev:frontend:
+    desc: Start only the Vite frontend dev server
+    cmds:
+      - pnpm dev
+
+  build:
+    desc: Production build (frontend + Rust)
+    cmds:
+      - pnpm tauri build
+
+  build:frontend:
+    desc: Build only the frontend
+    cmds:
+      - pnpm build
+
+  clean:
+    desc: Remove all build artifacts and dependencies
+    cmds:
+      - rm -rf node_modules
+      - rm -rf dist
+      - rm -rf src-tauri/target
+
+  clean:frontend:
+    desc: Remove frontend build artifacts and dependencies
+    cmds:
+      - rm -rf node_modules
+      - rm -rf dist
+
+  clean:rust:
+    desc: Remove Rust build artifacts
+    cmds:
+      - cd src-tauri && cargo clean

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "thalmic-myo",
+  "productName": "Thalmic Myo by mdiazn80",
   "version": "0.1.0",
   "identifier": "com.mdiazn80.thalmic-myo",
   "build": {
@@ -12,9 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "thalmic-myo",
-        "width": 800,
-        "height": 600
+        "title": "Thalmic Myo by mdiazn80",
+        "width": 1280,
+        "height": 760,
+        "resizable": true,
+        "minWidth": 1100,
+        "minHeight": 750
       }
     ],
     "security": {
@@ -30,6 +33,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    }
   }
 }

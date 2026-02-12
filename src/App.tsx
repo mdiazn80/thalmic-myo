@@ -1,50 +1,170 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useEffect, useCallback } from "react";
 import "./App.css";
+import Header from "./components/Header";
+import Dashboard from "./components/Dashboard";
+import StatusBar from "./components/StatusBar";
+import { useMyoStream } from "./hooks/useMyoStream";
+import {
+  startScan,
+  stopScan,
+  connectDevice,
+  disconnectDevice,
+  onDeviceDiscovered,
+  onConnectionChanged,
+  type DiscoveredDevice,
+  type ConnectionState,
+} from "./services/ble";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [devices, setDevices] = useState<DiscoveredDevice[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [connectionStates, setConnectionStates] = useState<
+    Record<string, ConnectionState>
+  >({});
+  const [connectedDeviceId, setConnectedDeviceId] = useState<string | null>(
+    null
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [customDeviceName, setCustomDeviceName] = useState<string | null>(null);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+  const isConnected = connectedDeviceId !== null;
+
+  const {
+    emgRef,
+    imu,
+    batteryLevel,
+    deviceInfo,
+  } = useMyoStream(isConnected);
+
+  useEffect(() => {
+    let unlistenDiscovered: (() => void) | null = null;
+    let unlistenConnection: (() => void) | null = null;
+
+    const setup = async () => {
+      unlistenDiscovered = await onDeviceDiscovered((device) => {
+        setDevices((prev) => {
+          const idx = prev.findIndex((d) => d.id === device.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = device;
+            return updated;
+          }
+          return [...prev, device];
+        });
+      });
+
+      unlistenConnection = await onConnectionChanged((event) => {
+        setConnectionStates((prev) => ({
+          ...prev,
+          [event.device_id]: event.state,
+        }));
+
+        if (event.state === "connected") {
+          setConnectedDeviceId(event.device_id);
+        } else if (event.state === "disconnected") {
+          setConnectedDeviceId((prev) =>
+            prev === event.device_id ? null : prev
+          );
+          setCustomDeviceName(null);
+        }
+      });
+    };
+
+    setup();
+
+    return () => {
+      unlistenDiscovered?.();
+      unlistenConnection?.();
+    };
+  }, []);
+
+  const handleScanToggle = useCallback(async () => {
+    setError(null);
+    try {
+      if (isScanning) {
+        await stopScan();
+        setIsScanning(false);
+      } else {
+        setDevices([]);
+        setIsScanning(true);
+        await startScan();
+      }
+    } catch (err) {
+      setError(String(err));
+      setIsScanning(false);
+    }
+  }, [isScanning]);
+
+  const handleConnect = useCallback(async (deviceId: string) => {
+    setError(null);
+    try {
+      setIsScanning(false);
+      await connectDevice(deviceId);
+    } catch (err) {
+      setError(String(err));
+    }
+  }, []);
+
+  const handleDisconnect = useCallback(async () => {
+    setError(null);
+    try {
+      await disconnectDevice();
+    } catch (err) {
+      setError(String(err));
+    }
+    // Reset all state to initial — as if the app just launched
+    setDevices([]);
+    setConnectionStates({});
+    setIsScanning(false);
+    setConnectedDeviceId(null);
+    setCustomDeviceName(null);
+  }, []);
+
+  const connectedDevice = connectedDeviceId
+    ? devices.find((d) => d.id === connectedDeviceId) ?? null
+    : null;
+
+  const displayDeviceName =
+    customDeviceName ?? connectedDevice?.name ?? null;
+
+  const overallConnectionState: ConnectionState = connectedDeviceId
+    ? connectionStates[connectedDeviceId] ?? "disconnected"
+    : "disconnected";
+
+  const sortedDevices = [...devices].sort((a, b) => {
+    if (a.is_myo !== b.is_myo) return a.is_myo ? -1 : 1;
+    return (b.rssi ?? -999) - (a.rssi ?? -999);
+  });
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <div className="app">
+      <Header
+        connectedDeviceName={displayDeviceName}
+        batteryLevel={batteryLevel}
+        onDeviceNameChange={setCustomDeviceName}
+      />
+      <Dashboard
+        devices={sortedDevices}
+        isScanning={isScanning}
+        connectionStates={connectionStates}
+        connectedDeviceName={displayDeviceName}
+        onScanToggle={handleScanToggle}
+        onConnect={handleConnect}
+        onDisconnect={handleDisconnect}
+        scanDisabled={overallConnectionState === "connecting"}
+        emgRef={emgRef}
+        imu={imu}
+        batteryLevel={batteryLevel}
+        deviceInfo={deviceInfo}
+      />
+      <StatusBar
+        isScanning={isScanning}
+        connectedDeviceName={displayDeviceName}
+        connectionState={overallConnectionState}
+        deviceCount={devices.length}
+        error={error}
+      />
+    </div>
   );
 }
 
